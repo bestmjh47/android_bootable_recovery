@@ -1848,3 +1848,182 @@ int verify_root_and_recovery() {
     ensure_path_unmounted("/system");
     return ret;
 }
+
+#define ROMS 5
+
+int show_romswitcher_menu()
+{
+
+    int i, chosen_item = 0;
+    char buf[PATH_MAX];
+    static char* install_menu_items[MAX_NUM_MANAGED_VOLUMES + 1];
+
+    static const char* headers[] = { "RomSwitcher Menu", "", NULL };
+
+    for (i = 0; i < ROMS - 1; i++) {
+        sprintf(buf, "ROM %d", i + 2);
+        install_menu_items[i] = strdup(buf);
+    }
+
+    for (;;) {
+        chosen_item = get_menu_selection(headers, install_menu_items, 0, 0);
+        if (chosen_item == GO_BACK || chosen_item == REFRESH) break;
+        show_romswitcher_install(chosen_item + 2);
+    }
+    return chosen_item;
+}
+
+void show_romswitcher_install(int rom)
+{
+
+    char buf[PATH_MAX];
+    int i, chosen_item = 0;
+    static char* install_menu_items[MAX_NUM_MANAGED_VOLUMES + 4];
+
+    char* primary_path = get_primary_storage_path();
+    char** extra_paths = get_extra_storage_paths();
+    int num_extra_volumes = get_num_extra_volumes();
+
+    memset(install_menu_items, 0, MAX_NUM_MANAGED_VOLUMES + 4);
+
+    static const char* headers[] = { "RomSwitcher Menu", "", NULL };
+
+    sprintf(buf, "remove ROM %d", rom);
+    install_menu_items[0] = strdup(buf);
+
+    sprintf(buf, "wipe data of ROM %d", rom);
+    install_menu_items[1] = strdup(buf);
+
+    sprintf(buf, "wipe cache of ROM %d", rom);
+    install_menu_items[2] = strdup(buf);
+
+    sprintf(buf, "install ZIP to ROM %d from internal SD", rom);
+    install_menu_items[3] = strdup(buf);
+
+    install_menu_items[4 + num_extra_volumes] = NULL;
+
+    for (i = 0; i < num_extra_volumes; i++) {
+        sprintf(buf, "install ZIP to ROM %d from external SD", rom);
+        install_menu_items[4 + i] = strdup(buf);
+    }
+
+    for (;;) {
+        chosen_item = get_menu_selection(headers, install_menu_items, 0, 0);
+        if (chosen_item == GO_BACK || chosen_item == REFRESH) break;
+        switch (chosen_item)
+        {
+            case 0:
+                sprintf(buf, "Yes - Remove ROM %d", rom);
+                if (confirm_selection("Confirm remove?", strdup(buf))) {
+                    ensure_path_mounted("/data");
+                    sprintf(buf, "rm -rf /data/media/.%drom", rom);
+                    __system(strdup(buf));
+                    ui_print("ROM %d removed.\n", rom);
+                }
+                ensure_path_unmounted("/data");
+                break;
+            case 1:
+                sprintf(buf, "Yes - Wipe data of ROM %d", rom);
+                if (confirm_selection("Confirm wipe?", strdup(buf))) {
+                    ensure_path_mounted("/data");
+                    // Wipe data
+                    sprintf(buf, "rm -rf /data/media/.%drom/data", rom);
+                    __system(strdup(buf));
+                    // Wipe cache
+                    sprintf(buf, "rm -rf /data/media/.%drom/cache", rom);
+                    __system(strdup(buf));
+
+                    ui_print("Data of ROM %d wiped.\n", rom);
+                }
+                ensure_path_unmounted("/data");
+                break;
+            case 2:
+                sprintf(buf, "Yes - Wipe cache of ROM %d", rom);
+                if (confirm_selection("Confirm wipe?", strdup(buf))) {
+                    ensure_path_mounted("/data");
+                    sprintf(buf, "rm -rf /data/media/.%drom/cache", rom);
+                    __system(strdup(buf));
+                    sprintf(buf, "rm -rf /data/media/.%drom/data/dalvik-cache", rom);
+                    __system(strdup(buf));
+                    ui_print("Cache of ROM %d wiped.\n", rom);
+                }
+                ensure_path_unmounted("/data");
+                break;
+            case 3:
+                show_choose_zip_menu_romswitcher(primary_path, rom);
+            case 4:
+                show_choose_zip_menu_romswitcher(extra_paths[chosen_item - 4], rom);
+            default:
+                break;
+        }
+    }
+}
+
+void show_choose_zip_menu_romswitcher(const char *mount_point, int rom)
+{
+
+    if (ensure_path_mounted(mount_point) != 0) {
+        LOGE("Can't mount %s\n", mount_point);
+        return;
+    }
+
+    if (ensure_path_mounted(get_primary_storage_path()) != 0) {
+        LOGE("Can't mount %s\n", get_primary_storage_path());
+        return;
+    }
+
+    static const char* headers[] = { "Choose a zip to apply", "", NULL };
+
+    char* file = choose_file_menu(mount_point, ".zip", headers);
+    if (file == NULL) return;
+    static char* confirm_install = "Confirm install?";
+    static char confirm[PATH_MAX];
+    sprintf(confirm, "Yes - Install %s", basename(file));
+
+    if (confirm_selection(confirm_install, confirm)) {
+        ui_print("Loading scripts...\n");
+
+        char buf[PATH_MAX];
+
+        sprintf(buf, "update_script.sh %d %s %s", rom, mount_point, file);
+        if (__system(strdup(buf)) == 0) {
+            install_zip(file);
+        } else {
+            __system("cat /tmp/recovery.log > /sdcard/rs.log");
+            ui_print("Something went wrong!\nPlease send me /sdcard/rs.log");
+        }
+
+        ui_print("Mouting partitions back and reload Recovery UI...\n");
+        sprintf(buf, "zip_mod.sh %s %s", mount_point, file);
+        __system(strdup(buf));
+        __system("mount_recovery.sh 0");
+    }
+}
+
+int show_select_rom_menu()
+{
+
+    int i, chosen_item = 0;
+    char buf[PATH_MAX];
+    char* primary_path = get_primary_storage_path();
+    static char* install_menu_items[MAX_NUM_MANAGED_VOLUMES + 1];
+
+    static const char* headers[] = { "Select ROM Menu", "", NULL };
+
+    for (i = 0; i < ROMS; i++) {
+        sprintf(buf, "Reboot to ROM %d", i + 1);
+        install_menu_items[i] = strdup(buf);
+    }
+
+    for (;;) {
+        chosen_item = get_menu_selection(headers, install_menu_items, 0, 0);
+        if (chosen_item == GO_BACK || chosen_item == REFRESH) break;
+        if (ensure_path_mounted(primary_path) == 0) {
+            sprintf(buf, "echo %d > /data/media/.rom", chosen_item + 1);
+            __system(strdup(buf));
+            ui_print("Rebooting to ROM %d", chosen_item + 1);
+            reboot_main_system(ANDROID_RB_RESTART, 0, 0);
+        }
+    }
+    return chosen_item;
+}

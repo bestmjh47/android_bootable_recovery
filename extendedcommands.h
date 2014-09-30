@@ -50,4 +50,7 @@ void extend_nandroid_menu(char** items, int item_count, int max_items);
 void handle_nandroid_menu(int item_count, int selected);
 #endif
 
+int show_romswitcher_menu();
+int show_select_rom_menu();
+
 #endif  // __EXTENDEDCOMMANDS_H

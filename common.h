@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <fs_mgr.h>
 
-#define MENU_TEXT_COLOR 0, 191, 255, 255
+#define MENU_TEXT_COLOR 255, 0, 0, 255
 #define NORMAL_TEXT_COLOR 200, 200, 200, 255
 #define HEADER_TEXT_COLOR NORMAL_TEXT_COLOR
 
